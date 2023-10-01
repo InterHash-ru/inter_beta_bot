@@ -1,0 +1,598 @@
+from datetime import datetime
+
+from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import Message, CallbackQuery
+
+from handlers.users.math import math
+from keyboards.inline.users import coin_ikb
+from keyboards.inline.users.general import UserCallbackData
+from keyboards.reply.users import main_panel
+from parser.connection import connect_to_db
+
+user_fromilize_router = Router(name='user_formilize')
+
+
+class Form(StatesGroup):
+    user = State()
+    currency = State()
+    coin = State()
+    cost_electr = State()
+    hash_rate = State()
+    potr_electr = State()
+    comm_pull = State()
+    finish = State()
+
+
+@user_fromilize_router.callback_query(UserCallbackData.filter((F.target == 'curs') & (F.action == 'get')))
+async def get_coin(callback: CallbackQuery, state: FSMContext, callback_data: UserCallbackData):
+    connect_to_db()
+
+    if callback_data.currency_id == 1:
+        val = 'RUB ₽'
+    else:
+        val = 'USD $'
+
+    user = callback.from_user.id
+
+    conn = connect_to_db()
+    cur = conn.cursor()
+
+    cur.execute("""UPDATE users SET currency = (%s) WHERE id = (%s)""", (val, user))
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    await state.update_data(currency=callback_data.currency_id)
+    await state.set_state(Form.cost_electr)
+
+    await callback.message.edit_text(
+        text='Выберите монету',
+        reply_markup=await coin_ikb()
+    )
+
+
+@user_fromilize_router.callback_query(UserCallbackData.filter((F.target == 'coins') & (F.action == 'get')))
+async def get_cost(callback: CallbackQuery, state: FSMContext, callback_data: UserCallbackData):
+    connect_to_db()
+
+    if callback_data.coin_id == 1:
+        coin = 'bitcoin'
+    elif callback_data.coin_id == 7:
+        coin = 'bitcoin-cash'
+    elif callback_data.coin_id == 8:
+        coin = 'litecoin'
+    elif callback_data.coin_id == 9:
+        coin = 'ethereum-classic'
+    elif callback_data.coin_id == 10:
+        coin = 'zcash'
+    else:
+        coin = 'dash'
+
+    user = callback.from_user.id
+
+    conn = connect_to_db()
+    cur = conn.cursor()
+
+    cur.execute("""UPDATE users SET coin = (%s) WHERE id = (%s)""", (coin, user))
+    conn.commit()
+
+    await state.update_data(coin=callback_data.coin_id)
+    await state.set_state(Form.hash_rate)
+
+    cur.execute("""SELECT currency from users WHERE id = (%s)""", (user,))
+    val = cur.fetchall()[0][0]
+    conn.commit()
+
+    if val == 'RUB ₽':
+        await callback.message.answer(
+            text='Укажите цену на электричество (кВт/ч) в рублях:',
+            reply_markup=main_panel
+        )
+    else:
+        await callback.message.answer(
+            text='Укажите цену на электричество (кВт/ч) в долларах:',
+            reply_markup=main_panel
+        )
+
+    cur.close()
+    conn.close()
+
+
+@user_fromilize_router.message(Form.hash_rate)
+async def get_hash(message: Message, state: FSMContext):
+    connect_to_db()
+
+    tip = message.text
+
+    if tip.isdecimal():
+
+        if tip < '0':
+            await message.answer(
+                text='Минимальная цена на электричество (кВт/ч) 0.01:',
+                reply_markup=main_panel
+            )
+        else:
+            cost = message.text
+
+            user = message.from_user.id
+
+            conn = connect_to_db()
+            cur = conn.cursor()
+
+            cur.execute("""UPDATE users SET cost_electricity = (%s) WHERE id = (%s)""", (cost, user))
+            conn.commit()
+
+            cur.execute("""SELECT coin FROM users WHERE id = (%s)""", (user,))
+
+            coin_type = cur.fetchall()[0][0]
+
+            cur.close()
+            conn.close()
+
+            await state.update_data(cost_electr=message.text)
+            await state.set_state(Form.potr_electr)
+
+            if coin_type == "bitcoin" or coin_type == "bitcoin-cash":
+                await message.answer(
+                    text='Укажите хешрейт (Th/s):',
+                    reply_markup=main_panel
+                )
+
+            elif coin_type == "litecoin" or coin_type == "dash":
+                await message.answer(
+                    text='Укажите хешрейт (Gh/s):',
+                    reply_markup=main_panel
+                )
+
+            elif coin_type == "ethereum-classic":
+                await message.answer(
+                    text='Укажите хешрейт (Mh/s):',
+                    reply_markup=main_panel
+                )
+
+            elif coin_type == "zcash":
+                await message.answer(
+                    text='Укажите хешрейт (kh/s):',
+                    reply_markup=main_panel
+                )
+    else:
+        try:
+            if message.text < '0.01':
+                await message.answer(
+                    text='Минимальная цена на электричество (кВт/ч) 0.01:',
+                    reply_markup=main_panel
+                )
+            else:
+                cost = message.text
+
+                user = message.from_user.id
+
+                conn = connect_to_db()
+                cur = conn.cursor()
+
+                cur.execute("""UPDATE users SET cost_electricity = (%s) WHERE id = (%s)""", (cost, user))
+                conn.commit()
+
+                cur.execute("""SELECT coin FROM users WHERE id = (%s)""", (user,))
+                coin_type = cur.fetchall()[0][0]
+
+                cur.close()
+                conn.close()
+
+                await state.update_data(cost_electr=message.text)
+                await state.set_state(Form.potr_electr)
+
+                if coin_type == "bitcoin" or coin_type == "bitcoin-cash":
+
+                    await message.answer(
+                        text='Укажите хешрейт (Th/s):',
+                        reply_markup=main_panel
+                    )
+
+                elif coin_type == "litecoin" or coin_type == "dash":
+                    await message.answer(
+                        text='Укажите хешрейт (Gh/s):',
+                        reply_markup=main_panel
+                    )
+
+                elif coin_type == "ethereum-classic":
+                    await message.answer(
+                        text='Укажите хешрейт (Mh/s):',
+                        reply_markup=main_panel
+                    )
+
+                elif coin_type == "zcash":
+                    await message.answer(
+                        text='Укажите хешрейт (kh/s):',
+                        reply_markup=main_panel
+                    )
+
+        except ValueError:
+            await message.answer(
+                text='Укажите цену на электричество (кВт/ч) числом:',
+                reply_markup=main_panel
+            )
+
+
+@user_fromilize_router.message(Form.potr_electr)
+async def get_potr(message: Message, state: FSMContext):
+    connect_to_db()
+
+    tip = message.text
+
+    if tip.isdecimal():
+        if tip < '0':
+            await message.answer(
+                text='Укажите хешрейт больше 0.09:',
+                reply_markup=main_panel
+            )
+        else:
+            hash = message.text
+
+            user = message.from_user.id
+
+            conn = connect_to_db()
+            cur = conn.cursor()
+
+            cur.execute("""UPDATE users SET hash = (%s) WHERE id = (%s)""", (hash, user))
+            conn.commit()
+
+            cur.close()
+            conn.close()
+
+            await state.update_data(hash_rate=message.text)
+            await state.set_state(Form.comm_pull)
+
+            await message.answer(
+                text='Укажите потребление (Ватт):',
+                reply_markup=main_panel
+            )
+    else:
+        try:
+            if tip < '0.1':
+                await message.answer(
+                    text='Укажите хешрейт больше 0.09:',
+                    reply_markup=main_panel
+                )
+
+            else:
+                hash = message.text
+
+                user = message.from_user.id
+
+                conn = connect_to_db()
+                cur = conn.cursor()
+
+                cur.execute("""UPDATE users SET hash = (%s) WHERE id = (%s)""", (hash, user))
+                conn.commit()
+
+                cur.close()
+                conn.close()
+
+                await state.update_data(hash_rate=message.text)
+                await state.set_state(Form.comm_pull)
+
+                await message.answer(
+                    text='Укажите потребление (Ватт):',
+                    reply_markup=main_panel
+                )
+
+        except ValueError:
+            await message.answer(
+                text='Укажите хешрейт числом:',
+                reply_markup=main_panel
+            )
+
+
+@user_fromilize_router.message(Form.comm_pull)
+async def get_comm(message: Message, state: FSMContext):
+    connect_to_db()
+
+    tip = message.text
+
+    if tip.isdecimal():
+        if tip < '0':
+            await message.answer(
+                text='Укажите потребление (Ватт) больше 0.09:',
+                reply_markup=main_panel
+            )
+        else:
+            potr = message.text
+            user = message.from_user.id
+
+            conn = connect_to_db()
+            cur = conn.cursor()
+
+            cur.execute("""UPDATE users SET potreb = (%s) WHERE id = (%s)""", (potr, user))
+            conn.commit()
+
+            cur.close()
+            conn.close()
+
+            await state.update_data(potr_electr=message.text)
+            await state.set_state(Form.finish)
+
+            await message.answer(
+                text='Укажите комиссию пула (%):',
+                reply_markup=main_panel
+            )
+    else:
+        try:
+            if tip < '0.1':
+                await message.answer(
+                    text='Укажите потребление (Ватт) больше 0.09:',
+                    reply_markup=main_panel
+                )
+            else:
+                potr = message.text
+                user = message.from_user.id
+
+                conn = connect_to_db()
+                cur = conn.cursor()
+
+                cur.execute("""UPDATE users SET potreb = (%s) WHERE id = (%s)""", (potr, user))
+                conn.commit()
+
+                cur.close()
+                conn.close()
+
+                await state.update_data(potr_electr=message.text)
+                await state.set_state(Form.finish)
+
+                await message.answer(
+                    text='Укажите комиссию пула (%):',
+                    reply_markup=main_panel
+                )
+
+        except ValueError:
+            await message.answer(
+                text='Укажите потребление (Ватт) числом:',
+                reply_markup=main_panel
+            )
+
+
+@user_fromilize_router.message(Form.finish)
+async def get_final(message: Message, state: FSMContext):
+    tip = message.text
+
+    if tip.isdecimal():
+        if tip < '0':
+            await message.answer(
+                text='Укажите комиссию пула (%) больше 0.1:',
+                reply_markup=main_panel
+            )
+
+        else:
+            await state.update_data(comm_pull=message.text)
+            await state.update_data(finish='done')
+
+            com = message.text
+            user = message.from_user.id
+
+            connect_to_db()
+
+            conn = connect_to_db()
+            cur = conn.cursor()
+
+            cur.execute("""UPDATE users SET komm = (%s) WHERE id = (%s)""", (com, user))
+            conn.commit()
+
+            user = message.from_user.id
+
+            cur.execute("""SELECT currency FROM users WHERE id = (%s)""", (user,))
+            conn.commit()
+            currency = cur.fetchall()[0][0]
+
+            cur.execute("""SELECT cost_electricity FROM users WHERE id = (%s)""", (user,))
+            conn.commit()
+            cost_electricity = cur.fetchall()[0][0]
+
+            cur.execute("""SELECT hash FROM users WHERE id = (%s)""", (user,))
+            conn.commit()
+            hash = cur.fetchall()[0][0]
+
+            cur.execute("""SELECT potreb FROM users WHERE id = (%s)""", (user,))
+            conn.commit()
+            potreb = cur.fetchall()[0][0]
+
+            cur.execute("""SELECT komm FROM users WHERE id = (%s)""", (user,))
+            conn.commit()
+            komm = cur.fetchall()[0][0]
+
+            cur.execute("""SELECT coin FROM users WHERE id = (%s)""", (user,))
+            conn.commit()
+            coin_type = (cur.fetchall()[0][0]).capitalize()
+
+            result = math(currency, coin_type, cost_electricity, hash, potreb, komm)
+
+            if coin_type == "Bitcoin":
+                coin = 'BTC'
+                hashrate = 'Th/s'
+
+            elif coin_type == "Litecoin":
+                coin = 'LTC'
+                hashrate = 'Gh/s'
+
+            elif coin_type == "Ethereum-classic":
+                coin = 'ETC'
+                hashrate = 'Mh/s'
+
+            elif coin_type == "Zcash":
+                coin = 'ZEC'
+                hashrate = 'kh/s'
+
+            elif coin_type == "Bitcoin-cash":
+                coin = 'BCH'
+                hashrate = 'Th/s'
+
+            else:
+                coin = 'DASH'
+                hashrate = 'Gh/s'
+
+            await message.answer(
+                text=f"Монета: {coin_type}"
+                     f"\nВалюта: {'Российский рубль' if currency == 'RUB ₽' else 'Доллар США'}"
+                     f"\nЦена на электроэнергию: {cost_electricity}"
+                     f"\nВаш хешрейт: {hash} {hashrate} "
+                     f"\nПотребление электроэнергии: {potreb} Ватт"
+                     f"\nКомиссия пула: {komm} %"
+                     "\n\n💵 ПРИБЫЛЬ"
+                     f"\n{result[-4]} {'₽' if currency == 'RUB ₽' else '$'} (в час)"
+                     f"\n{result[-3]} {'₽' if currency == 'RUB ₽' else '$'} (в день)"
+                     f"\n{result[-2]} {'₽' if currency == 'RUB ₽' else '$'} (в неделю)"
+                     f"\n{result[-1]} {'₽' if currency == 'RUB ₽' else '$'} (в месяц)"
+                     "\n\n🥇 НАГРАДА"
+                     f"\n{result[0]} {coin} (в час)"
+                     f"\n{result[1]} {coin} (в день)"
+                     f"\n{result[2]} {coin} (в неделю)"
+                     f"\n{result[3]} {coin} (в месяц)"
+                     "\n\n➕ ДОХОД"
+                     f"\n{result[4]} {'₽' if currency == 'RUB ₽' else '$'} (в час)"
+                     f"\n{result[5]} {'₽' if currency == 'RUB ₽' else '$'} (в день)"
+                     f"\n{result[6]} {'₽' if currency == 'RUB ₽' else '$'} (в неделю)"
+                     f"\n{result[7]} {'₽' if currency == 'RUB ₽' else '$'} (в месяц)"
+                     "\n\n➖ РАСХОДЫ"
+                     f"\n{result[8]} {'₽' if currency == 'RUB ₽' else '$'} (в час)"
+                     f"\n{result[9]} {'₽' if currency == 'RUB ₽' else '$'} (в день)"
+                     f"\n{result[10]} {'₽' if currency == 'RUB ₽' else '$'} (в неделю)"
+                     f"\n{result[11]} {'₽' if currency == 'RUB ₽' else '$'} (в месяц)",
+                reply_markup=main_panel
+            )
+
+            date = str(datetime.now())
+            user = message.from_user.id
+
+            cur.execute("""UPDATE users SET date = (%s) WHERE id = (%s)""", (date, user))
+            conn.commit()
+
+            await state.clear()
+
+            cur.close()
+            conn.close()
+
+    else:
+        try:
+            if tip < '0.1':
+                await message.answer(
+                    text='Укажите комиссию пула (%) больше 0.1:',
+                    reply_markup=main_panel
+                )
+            else:
+                await state.update_data(comm_pull=message.text)
+                await state.update_data(finish='done')
+
+                com = message.text
+                user = message.from_user.id
+
+                connect_to_db()
+
+                conn = connect_to_db()
+                cur = conn.cursor()
+
+                cur.execute("""UPDATE users SET komm = (%s) WHERE id = (%s)""", (com, user))
+                conn.commit()
+
+                user = message.from_user.id
+
+                cur.execute("""SELECT currency FROM users WHERE id = (%s)""", (user,))
+                conn.commit()
+                currency = cur.fetchall()[0][0]
+
+                cur.execute("""SELECT cost_electricity FROM users WHERE id = (%s)""", (user,))
+                conn.commit()
+                cost_electricity = cur.fetchall()[0][0]
+
+                cur.execute("""SELECT hash FROM users WHERE id = (%s)""", (user,))
+                conn.commit()
+                hash = cur.fetchall()[0][0]
+
+                cur.execute("""SELECT potreb FROM users WHERE id = (%s)""", (user,))
+                conn.commit()
+                potreb = cur.fetchall()[0][0]
+
+                cur.execute("""SELECT komm FROM users WHERE id = (%s)""", (user,))
+                conn.commit()
+                komm = cur.fetchall()[0][0]
+
+                cur.execute("""SELECT coin FROM users WHERE id = (%s)""", (user,))
+                conn.commit()
+                coin_type = (cur.fetchall()[0][0]).capitalize()
+
+                result = math(currency, coin_type, cost_electricity, hash, potreb, komm)
+
+                if coin_type == "Bitcoin":
+                    coin = 'BTC'
+                    hashrate = 'Th/s'
+
+                elif coin_type == "Litecoin":
+                    coin = 'LTC'
+                    hashrate = 'Gh/s'
+
+                elif coin_type == "Ethereum-classic":
+                    coin = 'ETC'
+                    hashrate = 'Mh/s'
+
+                elif coin_type == "Zcash":
+                    coin = 'ZEC'
+                    hashrate = 'kh/s'
+
+                elif coin_type == "Bitcoin-cash":
+                    coin = 'BCH'
+                    hashrate = 'Th/s'
+
+                else:
+                    coin = 'DASH'
+                    hashrate = 'Gh/s'
+
+                await message.answer(
+                    text=f"Монета: {coin_type}"
+                         f"\nВалюта: {'Российский рубль' if currency == 'RUB ₽' else 'Доллар США'}"
+                         f"\nЦена на электроэнергию: {cost_electricity}"
+                         f"\nВаш хешрейт: {hash} {hashrate} "
+                         f"\nПотребление электроэнергии: {potreb} Ватт"
+                         f"\nКомиссия пула: {komm} %"
+                         "\n\n💵 ПРИБЫЛЬ"
+                         f"\n{result[-4]} {'₽' if currency == 'RUB ₽' else '$'} (в час)"
+                         f"\n{result[-3]} {'₽' if currency == 'RUB ₽' else '$'} (в день)"
+                         f"\n{result[-2]} {'₽' if currency == 'RUB ₽' else '$'} (в неделю)"
+                         f"\n{result[-1]} {'₽' if currency == 'RUB ₽' else '$'} (в месяц)"
+                         "\n\n🥇 НАГРАДА"
+                         f"\n{result[0]} {coin} (в час)"
+                         f"\n{result[1]} {coin} (в день)"
+                         f"\n{result[2]} {coin} (в неделю)"
+                         f"\n{result[3]} {coin} (в месяц)"
+                         "\n\n➕ ДОХОД"
+                         f"\n{result[4]} {'₽' if currency == 'RUB ₽' else '$'} (в час)"
+                         f"\n{result[5]} {'₽' if currency == 'RUB ₽' else '$'} (в день)"
+                         f"\n{result[6]} {'₽' if currency == 'RUB ₽' else '$'} (в неделю)"
+                         f"\n{result[7]} {'₽' if currency == 'RUB ₽' else '$'} (в месяц)"
+                         "\n\n➖ РАСХОДЫ"
+                         f"\n{result[8]} {'₽' if currency == 'RUB ₽' else '$'} (в час)"
+                         f"\n{result[9]} {'₽' if currency == 'RUB ₽' else '$'} (в день)"
+                         f"\n{result[10]} {'₽' if currency == 'RUB ₽' else '$'} (в неделю)"
+                         f"\n{result[11]} {'₽' if currency == 'RUB ₽' else '$'} (в месяц)",
+                    reply_markup=main_panel
+                )
+
+                date = str(datetime.now())
+                user = message.from_user.id
+
+                cur.execute("""UPDATE users SET date = (%s) WHERE id = (%s)""", (date, user))
+                conn.commit()
+
+                await state.clear()
+
+                cur.close()
+                conn.close()
+
+        except ValueError:
+            await message.answer(
+                text='Укажите комиссию пула (%) числом:',
+                reply_markup=main_panel
+            )
+
+        await state.clear()
+

@@ -1,0 +1,16 @@
+              List of relations
+ Schema |      Name       | Type  |  Owner   
+--------+-----------------+-------+----------
+ public | admin           | table | postgres
+ public | alembic_version | table | postgres
+ public | aplications     | table | postgres
+ public | categories      | table | postgres
+ public | coins           | table | postgres
+ public | currencies      | table | postgres
+ public | disconts        | table | postgres
+ public | powers          | table | postgres
+ public | promocodes      | table | postgres
+ public | start           | table | postgres
+ public | users           | table | postgres
+(11 rows)
+
